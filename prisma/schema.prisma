@@ -1,0 +1,506 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// CORE MODELS
+// ============================================================================
+
+model User {
+  id                    String                @id @default(cuid())
+  email                 String                @unique
+  password              String
+  firstName             String
+  lastName              String
+  studentId             String?               @unique
+  collegeEmail          String?               @unique
+  phone                 String?
+  profilePhoto          String?
+  department            String?
+  academicYear          Int?
+  semester              Int?
+  skills                String[]              @default([])
+  verified              Boolean               @default(false)
+  verificationToken     String?
+  passwordResetToken    String?
+  passwordResetExpiry   DateTime?
+  lastLogin             DateTime?
+  active                Boolean               @default(true)
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  roles                 UserRole[]
+  clubMemberships       ClubMembership[]
+  eventRegistrations    EventRegistration[]
+  teamPositions         TeamPosition[]
+  feedback              EventFeedback[]
+  certificates          Certificate[]
+  projectMembers        ProjectMember[]
+  projectReviews        ProjectReview[]
+  resources             LearningResource[]    @relation("ResourceCreator")
+  userProgress          UserProgress[]
+  notifications         Notification[]
+  auditLogs             AuditLog[]            @relation("AuditActor")
+  targetedAuditLogs     AuditLog[]            @relation("AuditTarget")
+  attendance            Attendance[]
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique // STUDENT, CLUB_MEMBER, CLUB_COORDINATOR, etc.
+  description String?
+  permissions String[] @default([])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userRoles UserRole[]
+}
+
+model UserRole {
+  id          String   @id @default(cuid())
+  userId      String
+  roleId      String
+  clubId      String?  // For club-specific roles
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  club        Club?    @relation(fields: [clubId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, roleId, clubId])
+}
+
+// ============================================================================
+// DEPARTMENT & CLUB MODELS
+// ============================================================================
+
+model Department {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  code        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  clubs       Club[]
+}
+
+model Club {
+  id                   String                @id @default(cuid())
+  name                 String
+  slug                 String                @unique
+  description          String?
+  objectives           String?
+  domain               String? // AI/ML, Web Dev, etc.
+  logo                 String?
+  banner               String?
+  department           String?
+  departmentId         String?
+  website              String?
+  socialLinks          String[]              @default([])
+  totalMembers         Int                   @default(0)
+  active               Boolean               @default(true)
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  department_rel       Department?           @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  memberships          ClubMembership[]
+  team                 TeamPosition[]
+  events               Event[]
+  projects             Project[]
+  resources            LearningResource[]    @relation("ClubResources")
+  announcements        Announcement[]
+  gallery              GalleryItem[]         @relation("ClubGallery")
+  userRoles            UserRole[]
+}
+
+model ClubMembership {
+  id            String   @id @default(cuid())
+  userId        String
+  clubId        String
+  joinedAt      DateTime @default(now())
+  status        String   @default("active") // active, inactive, suspended
+  membershipId  String   @unique @default(cuid())
+  renewalDate   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  club          Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clubId])
+}
+
+model TeamPosition {
+  id              String   @id @default(cuid())
+  clubId          String
+  userId          String
+  position        String   // President, Secretary, Treasurer, etc.
+  tenure          String?  // 2023-2024, etc.
+  academicYear    Int?
+  startDate       DateTime
+  endDate         DateTime?
+  description     String?
+  approvalStatus  String   @default("pending") // pending, approved, rejected
+  approvedBy      String?
+  approvedAt      DateTime?
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  club            Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ============================================================================
+// EVENT MODELS
+// ============================================================================
+
+model Event {
+  id                   String                @id @default(cuid())
+  title                String
+  description          String?
+  clubId               String
+  eventType            String? // Workshop, Seminar, Hackathon, etc.
+  date                 DateTime
+  startTime            DateTime
+  endTime              DateTime
+  venue                String?
+  location             String?
+  capacity             Int                   @default(100)
+  registrationDeadline DateTime
+  poster               String?
+  eligibility          String? // All, 2nd Year+, etc.
+  status               String                @default("draft") // draft, published, ongoing, completed, cancelled
+  createdBy            String?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  club                 Club                  @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  registrations        EventRegistration[]
+  waitlist             Waitlist[]
+  attendance           Attendance[]
+  feedback             EventFeedback[]
+  certificates         Certificate[]        @relation("EventCertificates")
+}
+
+model EventRegistration {
+  id                String   @id @default(cuid())
+  eventId           String
+  userId            String
+  registeredAt      DateTime @default(now())
+  status            String   @default("registered") // registered, attended, cancelled, no-show
+  registrationToken String   @unique @default(cuid())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  event             Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+}
+
+model Waitlist {
+  id          String   @id @default(cuid())
+  eventId     String
+  userId      String
+  addedAt     DateTime @default(now())
+  position    Int
+  status      String   @default("waiting") // waiting, promoted, cancelled
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+}
+
+model Attendance {
+  id              String   @id @default(cuid())
+  eventId         String
+  userId          String
+  scannedAt       DateTime @default(now())
+  verificationMethod String  @default("qr") // qr, manual
+  status          String   @default("present") // present, absent, excused
+  scannedBy       String?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  event           Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+}
+
+model EventFeedback {
+  id          String   @id @default(cuid())
+  eventId     String
+  userId      String
+  rating      Int      @default(5) // 1-5
+  comments    String?
+  suggestions String?
+  submittedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+}
+
+// ============================================================================
+// CERTIFICATE MODELS
+// ============================================================================
+
+model Certificate {
+  id              String   @id @default(cuid())
+  certificateId   String   @unique @default(cuid())
+  userId          String
+  eventId         String?
+  clubId          String?
+  participationType String  @default("participant") // participant, speaker, volunteer, organizer
+  issueDate       DateTime @default(now())
+  expiryDate      DateTime?
+  verificationQR  String?
+  status          String   @default("issued") // issued, revoked, expired
+  pdfUrl          String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event           Event?   @relation("EventCertificates", fields: [eventId], references: [id], onDelete: SetNull)
+}
+
+// ============================================================================
+// PROJECT MODELS
+// ============================================================================
+
+model Project {
+  id              String          @id @default(cuid())
+  title           String
+  description     String?
+  clubId          String
+  domain          String? // AI/ML, Web Dev, etc.
+  technologies    String[]        @default([])
+  department      String?
+  academicYear    Int?
+  githubLink      String?
+  demoLink        String?
+  documentationLink String?
+  thumbnail       String?
+  status          String          @default("draft") // draft, submitted, under_review, approved, rejected, published
+  featured        Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  club            Club            @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  members         ProjectMember[]
+  reviews         ProjectReview[]
+  images          String[]        @default([])
+}
+
+model ProjectMember {
+  id          String   @id @default(cuid())
+  projectId   String
+  userId      String
+  role        String? // Lead, Developer, Designer, etc.
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+}
+
+model ProjectReview {
+  id          String   @id @default(cuid())
+  projectId   String
+  reviewerId  String
+  rating      Int      @default(5) // 1-10
+  remarks     String?
+  status      String   @default("pending") // pending, approved, rejected
+  reviewedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  reviewer    User     @relation(fields: [reviewerId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, reviewerId])
+}
+
+// ============================================================================
+// LEARNING MODELS
+// ============================================================================
+
+model LearningResource {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  resourceType String  // notes, tutorial, video, presentation, documentation, link, pdf
+  domain      String? // Java, Python, Web Dev, etc.
+  technology  String?
+  difficulty  String  @default("beginner") // beginner, intermediate, advanced
+  semester    Int?
+  clubId      String?
+  creatorId   String
+  url         String?
+  filePath    String?
+  thumbnailUrl String?
+  status      String  @default("published") // draft, published, archived
+  viewCount   Int     @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  club        Club?   @relation("ClubResources", fields: [clubId], references: [id], onDelete: SetNull)
+  creator     User    @relation("ResourceCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  userProgress UserProgress[]
+}
+
+model Roadmap {
+  id          String   @id @default(cuid())
+  title       String   @unique
+  description String?
+  domain      String   // Java, Python, Web Dev, etc.
+  steps       RoadmapStep[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model RoadmapStep {
+  id          String   @id @default(cuid())
+  roadmapId   String
+  order       Int
+  title       String
+  description String?
+  prerequisites String?
+  estimatedHours Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  roadmap     Roadmap @relation(fields: [roadmapId], references: [id], onDelete: Cascade)
+  userProgress UserProgress[]
+}
+
+model UserProgress {
+  id              String   @id @default(cuid())
+  userId          String
+  resourceId      String?
+  roadmapStepId   String?
+  completed       Boolean  @default(false)
+  completedAt     DateTime?
+  progress        Int      @default(0) // 0-100
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resource        LearningResource? @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  roadmapStep     RoadmapStep? @relation(fields: [roadmapStepId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, resourceId])
+  @@unique([userId, roadmapStepId])
+}
+
+model Tool {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  category    String
+  purpose     String?
+  platform    String[] @default([])
+  license     String?
+  officialLink String?
+  difficulty  String  @default("beginner")
+  learningPath String?
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ============================================================================
+// CONTENT MODELS
+// ============================================================================
+
+model GalleryItem {
+  id          String   @id @default(cuid())
+  clubId      String
+  eventId     String?
+  title       String?
+  imageUrl    String
+  videoUrl    String?
+  category    String? // event, project, club, other
+  uploadedAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  club        Club     @relation("ClubGallery", fields: [clubId], references: [id], onDelete: Cascade)
+}
+
+model Announcement {
+  id              String   @id @default(cuid())
+  title           String
+  content         String
+  category        String? // event, achievement, update, news
+  priority        String  @default("normal") // normal, important, urgent
+  clubId          String?
+  targetAudience  String  @default("all") // all, club_members, specific_role
+  publishDate     DateTime @default(now())
+  expiryDate      DateTime?
+  published       Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  club            Club?   @relation(fields: [clubId], references: [id], onDelete: SetNull)
+}
+
+// ============================================================================
+// NOTIFICATION & AUDIT MODELS
+// ============================================================================
+
+model Notification {
+  id          String   @id @default(cuid())
+  userId      String
+  type        String  // EVENT, REGISTRATION, ATTENDANCE, CERTIFICATE, PROJECT, APPROVAL, ANNOUNCEMENT, SYSTEM
+  title       String
+  message     String
+  relatedId   String? // event, project, or other related entity ID
+  relatedType String? // event, project, etc.
+  read        Boolean @default(false)
+  readAt      DateTime?
+  link        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+}
+
+model AuditLog {
+  id              String   @id @default(cuid())
+  actorId         String
+  action          String  // user_created, club_created, event_created, role_changed, etc.
+  targetId        String?
+  targetType      String? // user, club, event, etc.
+  details         String? // JSON metadata
+  ipAddress       String?
+  userAgent       String?
+  createdAt       DateTime @default(now())
+
+  actor           User    @relation("AuditActor", fields: [actorId], references: [id], onDelete: Cascade)
+  targetUser      User?   @relation("AuditTarget", fields: [targetId], references: [id], onDelete: SetNull)
+
+  @@index([actorId, createdAt])
+  @@index([targetId])
+}
